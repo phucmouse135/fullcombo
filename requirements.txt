@@ -1,0 +1,5 @@
+selenium>=4.15.0
+pyotp>=2.8.0
+colorama>=0.4.6
+config_utils
+pyperclip

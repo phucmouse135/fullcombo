@@ -1,0 +1,79 @@
+
+# Danh sách mã lỗi hệ thống TOOLCOMBO
+
+Dưới đây là các mã lỗi được sử dụng trong các file:
+
+## step1_login.py
+- LOGIN_FAILED_INCORRECT
+- LOGIN_FAILED_SOMETHING_WENT_WRONG
+- LOGIN_FAILED_RETRY
+- LOGGED_IN_UNKNOWN_STATE
+- TIMEOUT_LOGIN_CHECK
+- CONFIRM_YOUR_IDENTITY
+- 2FA_TEXT_MESSAGE
+- RECOVERY_CHALLENGE
+- SUSPENDED_PHONE
+- REQUIRE_PASSWORD_CHANGE
+- UNUSUAL_LOGIN
+- TRY_ANOTHER_DEVICE
+- SUSPENDED
+- CHECKPOINT_MAIL
+- BIRTHDAY_SCREEN
+- 2FA_SMS
+- 2FA_WHATSAPP
+- GET_HELP_LOG_IN
+- 2FA_APP
+- FAIL_LOGIN_REDIRECTED_TO_PROFILE_SELECTION
+- 2FA_NOTIFICATIONS
+- LOGGED_IN_SUCCESS
+- COOKIE_CONSENT
+
+## step2_exceptions.py
+- STOP_FLOW_CRASH
+- STOP_FLOW_EXCEPTION
+- STOP_FLOW_UNKNOWN_STATUS
+- LOGIN_FAILED_INCORRECT
+- LOGIN_FAILED_RETRY
+- LOGIN_FAILED_SOMETHING_WENT_WRONG
+- TIMEOUT_LOGIN_CHECK
+- CONFIRM_YOUR_IDENTITY
+- 2FA_TEXT_MESSAGE
+- 2FA_SMS
+- 2FA_WHATSAPP
+- GET_HELP_LOG_IN
+- 2FA_APP
+- 2FA_APP_CONFIRM
+- FAIL_LOGIN_REDIRECTED_TO_PROFILE_SELECTION
+- 2FA_NOTIFICATIONS
+- LOGGED_IN_UNKNOWN_STATE
+- PAGE_BROKEN
+- SUSPENDED_PHONE
+- LOG_IN_ANOTHER_DEVICE
+- STOP_FLOW_CHECKPOINT: Email hint mismatch
+- STOP_FLOW_CHECKPOINT: No code found in mail
+- STOP_FLOW_CHECKPOINT: Cannot find code input
+- STOP_FLOW_CHECKPOINT: All codes rejected
+- STOP_FLOW_CHECKPOINT: Suspended after code
+- STOP_FLOW_CHECKPOINT: Suspended after phone
+- STOP_FLOW_CHECKPOINT: Timeout verifying code
+- GMX_LOGIN_FAIL
+- TIMEOUT
+
+## step3_post_login.py
+- Không có mã lỗi đặc biệt, chủ yếu dùng các hàm wait_element, timeout cho các thao tác popup/profile.
+
+## step4_2fa.py
+- STOP_FLOW_2FA: WhatsApp Verification Required
+- STOP_FLOW_2FA: SMS Verification Required
+- STOP_FLOW_2FA: RESTRICTED_DEVICE
+- STOP_FLOW_2FA: ACCOUNT_SUSPENDED
+- STOP_FLOW_2FA: EMAIL_MISMATCH
+- STOP_FLOW_2FA: OTP_INPUT_FAIL
+- STOP_FLOW_2FA: OTP_REJECTED
+- STOP_FLOW_2FA: TIMEOUT (Done button not found)
+- STOP_FLOW_2FA: Checkpoint Failed after retries
+- STOP_FLOW_2FA: Secret Key NOT found after 3 retries! Blocking flow.
+
+## Ghi chú
+- Các mã lỗi trên được scan đúng ký tự, không thay đổi tên.
+- Bạn có thể tra cứu ý nghĩa chi tiết của từng mã lỗi trong phần code hoặc Readme.md cũ.

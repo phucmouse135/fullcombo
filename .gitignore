@@ -1,0 +1,9 @@
+.venv/ 
+__pycache__/
+*.pyc
+screenshots/
+venv/
+success.txt
+fail.txt
+2fa.txt
+temp_profiles/
