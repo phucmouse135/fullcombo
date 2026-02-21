@@ -66,22 +66,32 @@ class InstagramStep5Confirm:
                 
                 pass
 
-                # Click Reset
+
+                # Click Reset - [USER REQUEST] Optimized click similar to Step 0
                 reset_btn = None
-                buttons = self.driver.find_elements(By.TAG_NAME, "button")
-                for btn in buttons:
-                    txt = btn.text.lower()
-                    if "reset password" in txt or "change password" in txt or "lưu mật khẩu" in txt:
-                        reset_btn = btn
-                        break
+                # 1. Try finding by generic submit first
+                try: reset_btn = self.driver.find_element(By.CSS_SELECTOR, "button[type='submit']")
+                except: pass
                 
+                # 2. JS robust find
                 if not reset_btn:
-                     try: reset_btn = self.driver.find_element(By.CSS_SELECTOR, "button[type='submit']")
-                     except: pass
-                
+                     reset_btn = self.driver.execute_script("""
+                        var buttons = document.querySelectorAll('button, div[role="button"]');
+                        for (var i = 0; i < buttons.length; i++) {
+                            var t = buttons[i].innerText.toLowerCase();
+                            if ((t.includes('reset') || t.includes('change') || t.includes('lưu') || t.includes('đặt lại')) && buttons[i].offsetParent !== null) {
+                                return buttons[i];
+                            }
+                        }
+                        return null;
+                     """)
+
                 if reset_btn:
-                    try: reset_btn.click()
-                    except: self.driver.execute_script("arguments[0].click();", reset_btn)
+                    try:
+                        reset_btn.click()
+                    except:
+                        self.driver.execute_script("arguments[0].click();", reset_btn)
+                    print("   [Step 5] Clicked Reset button.")
                     
                     # [NEW] Check for "Same Password" error in Step 5
                     # If detected, try appending another '@' to ensure change?
@@ -115,7 +125,9 @@ class InstagramStep5Confirm:
                     else:
                         time.sleep(2) # Normal wait if no error immediately
                 else:
-                    print("   [Step 5] Reset button not found.")
+                    print("   [Step 5] Reset button not found. Using input.submit()")
+                    try: pass_input.submit()
+                    except: pass
             else:
                  print("   [Step 5] Password inputs not found. Might be direct login or just check.")
 
@@ -137,12 +149,22 @@ class InstagramStep5Confirm:
                     except: code_input.submit()
                     time.sleep(5)
 
+
             # 4. Check 2FA Login Screen
             # URL chứa "two_factor_login" hoặc "challenge"
             # Hoặc body có text "Enter the code we sent to your number ending in" (nhưng 2FA app thì khác)
             # Yêu cầu: "Xuất hiện 2fa (url chứa two_factor_login)"
             
-            time.sleep(3)
+            print("   [Step 5] Waiting for URL update (2FA Screen)...")
+            time.sleep(10) # Wait longer as requested
+            
+            # Additional wait loop for URL change or specific 2FA elements
+            for _ in range(5):
+                 current_url = self.driver.current_url.lower()
+                 if "two_factor" in current_url or "challenge" in current_url:
+                     break
+                 time.sleep(2)
+            
             current_url = self.driver.current_url.lower()
             print(f"   [Step 5] Final URL: {current_url}")
             

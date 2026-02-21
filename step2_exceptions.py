@@ -2064,32 +2064,21 @@ class InstagramExceptionStep:
                     """)
                 ])
 
-                # [USER REQUEST] Click lần 2 sau khi load để xử lý popup "Something went wrong" click OK
-                print("   [Step 2] Waiting 3s then checking for OK/Dismiss popups...")
+
+                # [USER REQUEST] Click lần 2 sau khi load để xử lý popup "Something went wrong" -> REFRESH 
+                print("   [Step 2] Waiting 3s then Refreshing page (instead of clicking OK)...")
                 time.sleep(3)
                 
-                self._robust_click_button([
-                    ("xpath", "//button[contains(text(), 'OK') or contains(text(), 'Ok')]"),
-                    ("css", "div[role='button'][aria-label='OK']"), 
-                    ("css", "div[role='button'][aria-label='Ok']"),
-                    ("xpath", "//div[contains(text(), 'Something went wrong')]/..//button"), 
-                    ("js", """
-                        var buttons = document.querySelectorAll('button, div[role="button"]');
-                        for (var i = 0; i < buttons.length; i++) {
-                            var text = buttons[i].textContent.trim().toLowerCase();
-                            var label = (buttons[i].ariaLabel || '').trim().toLowerCase();
-                            if (text === 'ok' || label === 'ok' || text.includes('dismiss') || text.includes('đóng')) {
-                                return buttons[i];
-                            }
-                        }
-                        return null;
-                    """)
-                ])
-
-                # Tăng thời gian chờ sau khi nhấn submit để tránh check mail quá sớm khi UI còn đang xử lý
-                WebDriverWait(self.driver, 10).until(lambda d: d.execute_script("return document.readyState") == "complete")
-                time.sleep(1)  # Reduced sleep to 1s
-                print("   [Step 2] Verifying code...")
+                # REFRESH PAGE
+                self.driver.refresh()
+                try:
+                    WebDriverWait(self.driver, 30).until(lambda d: d.execute_script("return document.readyState") == "complete")
+                except: pass
+                
+                # Tăng thời gian chờ sau khi load lại
+                time.sleep(5)
+                
+                print("   [Step 2] Verifying code after refresh...")
                 check_result = self._check_verification_result()
                 print(f"   [Step 2] Result: {check_result}")
             except Exception as e:

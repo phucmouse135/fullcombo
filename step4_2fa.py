@@ -345,22 +345,34 @@ class Instagram2FAStep:
             else:
                 print(f"   [{target_username}] [Step 4] No error pop-up detected. Continuing standard check...")
             
-            # -------------------------------------------------
-            # STANDARD CHECK (DONE BUTTON)
-            # -------------------------------------------------
-            print(f"   [{target_username}] [Step 4] Waiting for completion...")
+
+            #[USER REQUEST] Wait for DONE button and click before success
+            print(f"   [{target_username}] [Step 4] Waiting for completion (Checking 'Done' or Success msg)...")
             end_confirm = time.time() + 60
             success = False
-            wrong_otp_count = 0
-            max_wrong_retries = 3
-            
-            # [ADDED] Pre-check: If URL redirected to settings home, it's a success
-            if "two_factor" not in self.driver.current_url and "challenge" not in self.driver.current_url:
-                 print(f"   [{target_username}] [Step 4] URL redirected away from 2FA flow. Assessing success...")
-                 # Verify 2FA status via page state might be hard here without navigation, 
-                 # but assume success if no error and URL changed significantly (e.g. to accounts center home)
             
             while time.time() < end_confirm:
+                # 1. Check for Done Button and Click it
+                clicked_done = self.driver.execute_script("""
+                    var buttons = document.querySelectorAll('button, div[role="button"]');
+                    var clicked = false;
+                    for (var i = 0; i < buttons.length; i++) {
+                        var t = buttons[i].innerText.toLowerCase();
+                        if ((t === 'done' || t === 'xong') && buttons[i].offsetParent !== null) {
+                            buttons[i].click();
+                            clicked = true;
+                            break;
+                        }
+                    }
+                    return clicked;
+                """)
+                
+                if clicked_done:
+                    print(f"   [{target_username}] [Step 4] Clicked 'Done' button.")
+                    time.sleep(3) # Wait after click
+                    success = True
+                    break
+
                 res = self.driver.execute_script("""
                     var body = document.body.innerText.toLowerCase();
                     if (body.includes("code isn't right") || body.includes("mã không đúng")) return 'WRONG_OTP';

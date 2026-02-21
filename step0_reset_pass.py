@@ -212,20 +212,39 @@ class InstagramResetPasswordStep:
                 
                 full_url_success = False
                 for attempt in range(3):
-                     print(f"   [Step 0] Accessing FULL URL (Attempt {attempt + 1}/3)...")
-                     self.driver.get(full_url)
+                    print(f"   [Step 0] Accessing FULL URL (Attempt {attempt + 1}/3)...")
+                    self.driver.get(full_url)
                      
-                     try:
+                    try:
                         # Tăng timeout load page lên 60s
                         WebDriverWait(self.driver, 60).until(lambda d: d.execute_script("return document.readyState") == "complete")
-                     except: pass
+                    except: pass
                      
                      # Tăng sleep tĩnh để đảm bảo render kịp
-                     print("   [Step 0] Waiting 10s for page render...")
-                     time.sleep(10)
+                    print("   [Step 0] Waiting 10s for page render...")
+                    time.sleep(3)
+
+                     # [NEW] Check for "OK" popup (often appears on failed loads or info messages)
+                    try:
+                        ok_buttons = self.driver.find_elements(By.XPATH, "//div[@role='button' and text()='OK']")
+                        found_ok = False
+                        for btn in ok_buttons:
+                            if btn.is_displayed():
+                                found_ok = True
+                                break
+                        
+                        if found_ok:
+                            print("   [Step 0] 'OK' popup detected (Mobile Mode). Refreshing page...")
+                            self.driver.refresh()
+                            time.sleep(5)
+                            try:
+                                WebDriverWait(self.driver, 60).until(lambda d: d.execute_script("return document.readyState") == "complete")
+                            except: pass
+                    except Exception as e:
+                        print(f"   [Step 0] Error handling OK popup (Mobile): {e}")
                      
                      # Handle popup again
-                     try:
+                    try:
                         buttons = self.driver.find_elements(By.CSS_SELECTOR, 'button, div[role="button"]')
                         for b in buttons:
                             if not b.is_displayed(): continue
@@ -234,78 +253,32 @@ class InstagramResetPasswordStep:
                                 b.click()
                                 time.sleep(1)
                                 break
-                     except: pass
+                    except: pass
                      
                      # Check inputs for Full URL
-                     try: 
+                    try: 
                         # Tăng timeout tìm element
                         pass_input = WebDriverWait(self.driver, 10).until(EC.presence_of_element_located((By.CSS_SELECTOR, 'input[data-testid="new-password-field"]')))
                         verify_input = WebDriverWait(self.driver, 10).until(EC.presence_of_element_located((By.CSS_SELECTOR, 'input[data-testid="verify-password-field"]')))
-                     except:
+                    except:
                         pass_input = None
                         verify_input = None
                         
-                     if pass_input and verify_input:
+                    if pass_input and verify_input:
                         print("   [Step 0] Inputs found with Full URL.")
                         full_url_success = True
                         break
-                     else:
+                    else:
                         print(f"   [Step 0] Inputs NOT found on Full URL attempt {attempt + 1}. Retrying...")
                         time.sleep(2)
                 
                 if not full_url_success:
-                    print("   [Step 0] FULL URL failed 3 times (Page N/A or Missing Inputs) in Mobile Mode.")
-                    print("   [Step 0] Switching to PC Mode and retrying Full URL 2 more times...")
-                    
+                    print("   [Step 0] FULL URL failed 3 times (Page N/A or Missing Inputs) in Mobile Mode. CRITICAL FAIL.")
+                    self.driver.close()
                     try:
-                        self.driver.execute_cdp_cmd("Emulation.clearDeviceMetricsOverride", {})
-                        self.driver.execute_cdp_cmd("Emulation.setUserAgentOverride", {"userAgent": ""})
-                        try:
-                            self.driver.maximize_window()
-                        except: pass
-                    except Exception as e:
-                        print(f"   [Step 0] Failed to switch to PC mode: {e}")
-
-                    for attempt in range(2):
-                        print(f"   [Step 0] Accessing FULL URL (PC Mode - Attempt {attempt + 1}/2)...")
-                        self.driver.get(full_url)
-                        
-                        try:
-                            WebDriverWait(self.driver, 60).until(lambda d: d.execute_script("return document.readyState") == "complete")
-                        except: pass
-                        
-                        print("   [Step 0] Waiting 10s for page render (PC Mode)...")
-                        time.sleep(10)
-
-                        # Handle popup (PC view might fail css selector if different, but usually same class names)
-                        try:
-                            buttons = self.driver.find_elements(By.CSS_SELECTOR, 'button, div[role="button"]')
-                            for b in buttons:
-                                if not b.is_displayed(): continue
-                                txt = b.text.lower()
-                                if 'allow all cookies' in txt or 'cho phép tất cả' in txt or 'accept' in txt or 'chấp nhận' in txt:
-                                    b.click()
-                                    time.sleep(1)
-                                    break
-                        except: pass
-
-                        # Check inputs
-                        try: 
-                            pass_input = WebDriverWait(self.driver, 10).until(EC.presence_of_element_located((By.CSS_SELECTOR, 'input[data-testid="new-password-field"]')))
-                            verify_input = WebDriverWait(self.driver, 10).until(EC.presence_of_element_located((By.CSS_SELECTOR, 'input[data-testid="verify-password-field"]')))
-                        except:
-                            pass_input = None
-                            verify_input = None
-                            
-                        if pass_input and verify_input:
-                            print("   [Step 0] Inputs found with Full URL (PC Mode).")
-                            full_url_success = True
-                            break
-                        else:
-                             print(f"   [Step 0] Inputs NOT found on PC Mode attempt {attempt + 1}. Retrying...")
-                             time.sleep(2)
-
-                if not full_url_success:
+                        self.driver.switch_to.window(current_window)
+                    except: pass
+                    return "FAIL_FULL_URL_LOAD", None, None
                     print("   [Step 0] FULL URL failed in Mobile (3x) and PC (2x). CRITICAL FAIL.")
                     self.driver.close()
                     try: 
@@ -322,14 +295,25 @@ class InstagramResetPasswordStep:
                 return "SKIP_STEP0", None, None
 
             # 5. Entering Password
-            # Re-locate elements (because we might have reloaded or switched to full url)
+            # Create flexible input finding
             print("   [Step 0] Entering new password...")
             
-            # Use wait_element normally now
             pass_input = wait_element(self.driver, By.CSS_SELECTOR, 'input[data-testid="new-password-field"]', timeout=10)
-            verify_input = wait_element(self.driver, By.CSS_SELECTOR, 'input[data-testid="verify-password-field"]', timeout=10)
+            verify_input = None
+            try:
+                verify_input = wait_element(self.driver, By.CSS_SELECTOR, 'input[data-testid="verify-password-field"]', timeout=5)
+            except: pass
             
-            if not pass_input or not verify_input:
+            if not pass_input:
+                # Try finding generic password inputs as fallback
+                try:
+                    p_inputs = self.driver.find_elements(By.CSS_SELECTOR, "input[type='password']")
+                    if len(p_inputs) > 0:
+                        pass_input = p_inputs[0]
+                        if len(p_inputs) > 1: verify_input = p_inputs[1]
+                except: pass
+
+            if not pass_input:
                 # Có thể link trỏ thẳng về trang login hoặc trang khác
                 print("   [Step 0] Keep inputs not found. Maybe link is instant login or invalid.")
                 # Nếu không thấy ô nhập pass, có thể nó đã login luôn (one click login).
@@ -347,9 +331,13 @@ class InstagramResetPasswordStep:
             pass_input.clear()
             pass_input.send_keys(new_password)
             time.sleep(0.5)
-            verify_input.clear()
-            verify_input.send_keys(new_password)
-            time.sleep(0.5)
+            
+            if verify_input:
+                verify_input.clear()
+                verify_input.send_keys(new_password)
+                time.sleep(0.5)
+            else:
+                print("   [Step 0] Verify input not found (Single input mode). proceeding...")
             
             # Click Reset Password Button
             print("   [Step 0] Looking for Reset/Change Password button...")
@@ -434,18 +422,31 @@ class InstagramResetPasswordStep:
                     print("   [Step 0] Handling 'Same Password' error...")
                     
                     # [FIX] Re-locate elements to avoid StaleElementReferenceException
+                    pass_input = None
+                    verify_input = None
                     try:
                         print("   [Step 0] Re-locating input fields...")
                         pass_input = WebDriverWait(self.driver, 10).until(EC.presence_of_element_located((By.CSS_SELECTOR, 'input[data-testid="new-password-field"]')))
-                        verify_input = WebDriverWait(self.driver, 10).until(EC.presence_of_element_located((By.CSS_SELECTOR, 'input[data-testid="verify-password-field"]')))
+                        try:
+                            verify_input = WebDriverWait(self.driver, 5).until(EC.presence_of_element_located((By.CSS_SELECTOR, 'input[data-testid="verify-password-field"]')))
+                        except: verify_input = None
                     except Exception as e:
                         print(f"   [Step 0] Failed to re-locate inputs: {e}")
-                        return "FAIL_RELOCATE_INPUTS", None, None
+                        # If pass_input failed, we try generic
+                        if not pass_input:
+                             try:
+                                pis = self.driver.find_elements(By.CSS_SELECTOR, "input[type='password']")
+                                if pis: pass_input = pis[0] 
+                                if len(pis) > 1: verify_input = pis[1]
+                             except: pass
+                        
+                        if not pass_input:
+                            return "FAIL_RELOCATE_INPUTS", None, None
 
                     # 1. Clear inputs
                     try:
                         pass_input.clear()
-                        verify_input.clear()
+                        if verify_input: verify_input.clear()
                     except: pass
                     time.sleep(1)
                     
@@ -456,8 +457,9 @@ class InstagramResetPasswordStep:
                     
                     pass_input.send_keys(adjusted_pass)
                     time.sleep(0.5)
-                    verify_input.send_keys(adjusted_pass)
-                    time.sleep(0.5)
+                    if verify_input:
+                        verify_input.send_keys(adjusted_pass)
+                        time.sleep(0.5)
                     
                     # Click reset again with optimized logic
                     print("   [Step 0] Clicking Reset button (Retry)...")
@@ -648,7 +650,7 @@ class InstagramResetPasswordStep:
                         # Thử enter hoặc tìm form submit
                         code_input.submit()
                         
-                    time.sleep(10) # Chờ load sau khi submit code
+                    time.sleep(3) # Chờ load sau khi submit code
                 else:
                     print("   [Step 0] Code not found in mail.")
                     # Có thể return FAIL hoặc để nó chạy tiếp sang Step 2 check status
@@ -666,19 +668,15 @@ class InstagramResetPasswordStep:
                 self.driver.close() # Close mobile/reset tab
             except: pass
 
-            # Open a fresh tab for Step 2 at instagram.com
+            # truy cập instagram.com trên tab hiện tại (đã disable mobile emulation)
             try:
-                self.driver.execute_script("window.open('https://www.instagram.com/','_blank');")
-                self.driver.switch_to.window(self.driver.window_handles[-1])
-                time.sleep(3)
+                self.driver.switch_to.window(current_window)
+                self.driver.get("https://www.instagram.com/")
+                time.sleep(5)
             except Exception as e:
-                print(f"   [Step 0] Failed to open new tab for Step 2: {e}")
-                try:
-                    if 'current_window' in locals() and current_window in self.driver.window_handles:
-                        self.driver.switch_to.window(current_window)
-                        self.driver.get("https://www.instagram.com/")
-                        time.sleep(3)
-                except: pass
+                print(f"   [Step 0] Failed to switch back to main tab or load Instagram: {e}")
+                return "FAIL_SWITCH_TAB", None, None
+            
 
             # Trả về cả link full
             return "SUCCESS", found_username, full_url # Báo hiệu đã xong Step 0 thành công -> Skip Step 1
