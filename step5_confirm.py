@@ -39,6 +39,32 @@ class InstagramStep5Confirm:
                 verify_input.clear()
                 verify_input.send_keys(password)
                 time.sleep(0.5)
+                
+                # [NEW] Check logic: if password was adjusted in Step 0 (e.g. gmx_pass + @),
+                # here we might want to change it BACK to gmx_pass or stay with adjustment?
+                # User instructions: "cũng ghi nhớ để step cuối sau khi bật 2fa xong thay đổi pass 1 lần nữa sẽ điền lại pass này"
+                # "Pass này" refers to the one used in Step 0 retry (gmx_pass + @).
+                # The parameter `password` passed here IS ALREADY UPDATED by gui_app.py 
+                # because we updated acc['password'] in Step 0.
+                # So we just use `password` variable as is. 
+                # Wait, if "Create a new password that isn't your current password" happens AGAIN here (because we just set it in step 0),
+                # we might need to toggle back or add another char?
+                # Usually Step 5 is confirming/changing pass again. If the previous change (Step 0) was successful to `gmx_pass + @`,
+                # then current pass IS `gmx_pass + @`.
+                # If we try to set it to `gmx_pass + @` again, Instagram will say "Cannot match current pass".
+                # User says: "ghi nhớ để step cuối ... sẽ điền lại pass này" -> means set it to the SAME adjusted pass?
+                # If so, Instagram will block it.
+                # Maybe goal is: Step 0 sets `gmx_pass + @`. Step 5 sets `gmx_pass` (original)?
+                # OR Step 0 sets `gmx_pass + @`. Step 5 sets `gmx_pass + @ + @`?
+                
+                # "xóa các ô input đã điền và tiến hành điền lại với mật khẩu hiện tại + @ ... step cuối ... điền lại pass này"
+                # Context "mật khẩu hiện tại" in Step 0 was `gmx_pass`. So adjusted was `gmx_pass + @`.
+                # So `password` arg coming in is `gmx_pass + @`.
+                # If we submit `gmx_pass + @` here, and it fails with "same as current",
+                # we should probably add another "@" or just ignore?
+                # Let's handle the "Same Password" error here too, just in case.
+                
+                pass
 
                 # Click Reset
                 reset_btn = None
@@ -56,7 +82,38 @@ class InstagramStep5Confirm:
                 if reset_btn:
                     try: reset_btn.click()
                     except: self.driver.execute_script("arguments[0].click();", reset_btn)
-                    time.sleep(5)
+                    
+                    # [NEW] Check for "Same Password" error in Step 5
+                    # If detected, try appending another '@' to ensure change?
+                    # Or if user meant "re-enter the same pass" to confirm? 
+                    # Usually Step 5 is "Change Password" flow. You cannot change to the same password.
+                    # If `password` is already the current password, we must change it.
+                    # Let's detect error and append '@' if needed.
+                    
+                    is_same_pass = False
+                    for _ in range(5):
+                        time.sleep(1)
+                        try:
+                            body_src = self.driver.find_element(By.TAG_NAME, "body").text.lower()
+                            if "isn't your current password" in body_src or "không trùng với mật khẩu hiện tại" in body_src:
+                                is_same_pass = True
+                                break
+                        except: pass
+                    
+                    if is_same_pass:
+                        print("   [Step 5] Same password detected. Appending '@'...")
+                        password = password + "@"
+                        pass_input.clear()
+                        verify_input.clear()
+                        time.sleep(0.5)
+                        pass_input.send_keys(password)
+                        verify_input.send_keys(password)
+                        time.sleep(0.5)
+                        try: reset_btn.click()
+                        except: self.driver.execute_script("arguments[0].click();", reset_btn)
+                        time.sleep(5)
+                    else:
+                        time.sleep(2) # Normal wait if no error immediately
                 else:
                     print("   [Step 5] Reset button not found.")
             else:

@@ -36,7 +36,7 @@ class AutomationGUI:
         
         # Variables
         self.file_path_var = tk.StringVar()
-        self.thread_count_var = tk.IntVar(value=10)   # Mặc định 10 luồng để test chia màn hình
+        self.thread_count_var = tk.IntVar(value=1)   # Mặc định 10 luồng để test chia màn hình
         self.headless_var = tk.BooleanVar(value=False) # Mặc định False để hiện trình duyệt
         self.status_var = tk.StringVar(value="Ready")
         
@@ -166,25 +166,26 @@ class AutomationGUI:
     def calculate_window_rect(self, slot_id, total_slots):
         """
         Tính toán x, y, width, height dựa trên Slot ID và kích thước màn hình.
-        Chia màn hình theo chiều ngang, giữ nguyên chiều dọc để xếp các cửa sổ Chrome.
+        Chia màn hình theo chiều ngang đảm bảo không xếp chồng.
         """
         try:
             screen_width = self.root.winfo_screenwidth()
             screen_height = self.root.winfo_screenheight() - 50 # Trừ thanh Taskbar
             
-            # Giữ nguyên chiều dọc, chia theo chiều ngang
-            rows = 1
-            cols = total_slots
+            # Đảm bảo số cột luôn >= 1
+            cols = total_slots if total_slots > 0 else 1
             
+            # Tính chiều rộng mỗi cửa sổ
             win_w = int(screen_width / cols)
-            win_h = screen_height  # Giữ nguyên chiều cao màn hình
+            win_h = screen_height  
             
-            # Tính tọa độ
-            curr_row = 0  # Luôn ở hàng đầu
-            curr_col = slot_id % cols
-            
-            x = curr_col * win_w
+            # Tọa độ x sẽ tịnh tiến theo slot_id
+            x = slot_id * win_w
             y = 0
+            
+            # Xử lý phần dư pixel cuối cùng cho cửa sổ cuối
+            if slot_id == cols - 1:
+                win_w = screen_width - x
             
             return (x, y, win_w, win_h)
         except:
@@ -232,6 +233,13 @@ class AutomationGUI:
                 break  # Success, exit retry loop
             except Exception as driver_error:
                 print(f"   [Driver] Failed to create Chrome driver (attempt {driver_attempt + 1}): {driver_error}")
+                if driver:
+                    try: 
+                        driver.quit()
+                    except: 
+                        pass
+                    driver = None
+                
                 if driver_attempt < max_driver_retries - 1:
                     print("   [Driver] Retrying in 3 seconds...")
                     time.sleep(3)
@@ -257,71 +265,74 @@ class AutomationGUI:
             # Theo yêu cầu: "Tiến hành điền password(password cột password mail) vào các ô input"
             new_pass_for_reset = acc['gmx_pass'] 
             
-            # Update: Step 0 now returns (status, username, full_link)
+            # Update: Step 0 now returns (status, username, full_link, [adjusted_password])
             step0_status = "FAIL_UNKNOWN"
+            final_reset_password = new_pass_for_reset # Default is gmx_pass
+            
             try:
                  result_tuple = step0.process_reset_password(acc['gmx_user'], acc['gmx_pass'], new_pass_for_reset)
+                 
                  if isinstance(result_tuple, tuple):
-                     step0_status, found_username, full_step0_link = result_tuple
+                     if len(result_tuple) >= 4:
+                         step0_status, found_username, full_step0_link, adjusted_pass_val = result_tuple
+                         if adjusted_pass_val:
+                             final_reset_password = adjusted_pass_val
+                     else:
+                        step0_status, found_username, full_step0_link = result_tuple
                  else:
                      step0_status = result_tuple
-            except Exception as e:
-                 print(f"   [Step 0] Exception calling process: {e}")
+            except Exception as e_proc_call:
+                 print(f"   [Step 0] Exception calling process: {e_proc_call}")
                  step0_status = "SKIP_STEP0"
 
             status = "FAIL_UNKNOWN" # Default status
             
-            if step0_status == "SUCCESS":
+            # [USER REQUEST] Always proceed to Step 2 regardless of Step 0 outcome
+            if step0_status == "SUCCESS" or step0_status == "SUCCESS_WITH_ADJUSTED_PASS":
                 print(f"   [Step 0] SUCCESS. Skipping Step 1 Login.")
-                
-                # Cập nhật username nếu tìm thấy từ mail
                 if found_username and found_username != "unknown_user":
-                    print(f"   [Main] Updating username from mail: {found_username}")
                     acc['username'] = found_username
-                    # Cập nhật cột User (index 0)
                     self.update_tree_item(item_id, {0: found_username})
-
-                # Cập nhật pass mới vào cây GUI và biến acc
-                self._on_password_changed(acc['username'], new_pass_for_reset)
-                acc['password'] = new_pass_for_reset
                 
-                # Giả lập status thành công để vào Step 2 check lại
+                # Update table with the finalized password (gmx_pass OR gmx_pass + @)
+                self._on_password_changed(acc['username'], final_reset_password)
+                acc['password'] = final_reset_password
                 status = "LOGGED_IN_SUCCESS"
-                
-                # Step 0 đã redirect/load instagram.com ở tab hiện tại (PC mode)
-                # Không cần mở tab mới hay làm gì thêm
+            
+            elif step0_status == "FAIL_FULL_URL_LOAD":
+                # [NEW] Stop immediately if Full URL failed 3 times
+                print(f"   [Step 0] Failed to load Full URL 3 times. Stopping flow.")
+                raise Exception("STOP_FLOW_FAIL_FULL_URL_LOAD")
 
-            elif step0_status == "FAIL_MAIL_NOT_FOUND":
-                print(f"   [Step 0] Failed: Reset Mail Not Found. Aborting case.")
-                end_time = time.time()
-                elapsed = end_time - start_time
-                note_time = f"Mail Not Found in {elapsed:.1f}s"
-                self.msg_queue.put(("FAIL_CRITICAL", (item_id, "Reset Mail Not Found", note_time)))
-                if driver: driver.quit()
-                return
+            elif "FAIL" in step0_status or "SKIP" in step0_status:
+                # [USER REQUEST] Step 0 must succeed to proceed. If Step 0 fails/skips, stop here.
+                print(f"   [Step 0] Failed or Skipped ({step0_status}). Calling STOP.")
+                raise Exception(f"STOP_FLOW_STEP0_FAILED_{step0_status}")
 
             else:
-                # Step 0 skip hoặc fail nhẹ -> chạy Step 1 Login bình thường
-                if step0_status != "SKIP_STEP0":
-                    print(f"   [Step 0] Failed ({step0_status}). Fallback to Step 1 Login.")
-                else:
-                    print(f"   [Step 0] Skipped. Proceeding to Step 1 Login.")
+                # Any other case (though should be covered above)
+                print(f"   [Step 0] Finished with unexpected status: {step0_status}. Proceeding to Step 2 check.")
                 
-                # Step 1: Login
-                step1 = InstagramLoginStep(driver)
-                # step1.load_base_cookies("Wed New Instgram  2026 .json")
-                print("   [Step 1] Loading base cookies...")
+                # Make sure we are on Instagram
                 driver.get("https://www.instagram.com/")
-                time.sleep(1)
-                print("   [Step 1] Logging in...")
-                status = step1.perform_login(acc['username'], acc['password'])
-                if "FAIL" in status:
-                    end_time = time.time()
-                    elapsed = end_time - start_time
-                    note_time = f"Failed in {elapsed:.1f}s"
-                    self.msg_queue.put(("FAIL_CRITICAL", (item_id, status, note_time)))
-                    return
-                time.sleep(2)  # Chờ ổn định trang sau login
+                time.sleep(3)
+                
+                status = "UNKNOWN_CHECK_PAGE"
+                
+                # Step 1: Login -> DISABLED
+                # step1 = InstagramLoginStep(driver)
+                # print("   [Step 1] Loading base cookies...")
+                # driver.get("https://www.instagram.com/")
+                # time.sleep(1)
+                # print("   [Step 1] Logging in...")
+                # status = step1.perform_login(acc['username'], acc['password'])
+                # if "FAIL" in status:
+                #     end_time = time.time()
+                #     elapsed = end_time - start_time
+                #     note_time = f"Failed in {elapsed:.1f}s"
+                #     self.msg_queue.put(("FAIL_CRITICAL", (item_id, status, note_time)))
+                #     return
+                # time.sleep(2)  # Chờ ổn định trang sau login
             
             # Step 2: Handle Exception (Common for both flows)
             step2 = InstagramExceptionStep(driver)
@@ -337,7 +348,7 @@ class AutomationGUI:
                 updated_password = values[3]  # Password is at index 3
                 acc['password'] = updated_password  # Update the acc dictionary
                 # Restart login with new password
-                status = step1.perform_login(acc['username'], updated_password)
+                # status = step1.perform_login(acc['username'], updated_password)
                 if "FAIL" in status:
                     end_time = time.time()
                     elapsed = end_time - start_time
@@ -369,14 +380,21 @@ class AutomationGUI:
             recheck_status = step2._check_verification_result()
             
             if recheck_status not in success_statuses:
-                print(f"   [Main] Session unstable after 5s: {recheck_status}")
-                end_time = time.time()
-                elapsed = end_time - start_time
-                note_time = f"Session unstable in {elapsed:.1f}s"
-                # Updated to use actual status instead of hardcoded "LOGOUT AFTER LOGIN"
-                self.msg_queue.put(("FAIL_CRITICAL", (item_id, f"{recheck_status}", note_time)))
-                return
-            
+                print(f"   [Main] Session unstable after 5s: {recheck_status}. Attempting to handle...")
+                
+                # Gọi lại handle_status để xử lý các vấn đề mới phát sinh (Checkpoint, Suspicious...)
+                rehandled_status = step2.handle_status(recheck_status, acc['username'], acc['gmx_user'], acc['gmx_pass'], acc['linked_mail'], acc['password'])
+                
+                if rehandled_status not in success_statuses:
+                    print(f"   [Main] Failed to handle unstable session: {rehandled_status}")
+                    end_time = time.time()
+                    elapsed = end_time - start_time
+                    note_time = f"Session unstable in {elapsed:.1f}s"
+                    self.msg_queue.put(("FAIL_CRITICAL", (item_id, f"{rehandled_status}", note_time)))
+                    return
+                else:
+                    print(f"   [Main] Successfully handled unstable session. New status: {rehandled_status}")
+
             # Step 3: Crawl in new tab
             # Open new tab for step 3
             driver.execute_script("window.open('https://www.instagram.com/');")
@@ -479,21 +497,21 @@ class AutomationGUI:
                 # Success
                 self.msg_queue.put(("SUCCESS", (item_id, key_raw, note_time)))
 
-            except Exception as e:
+            except Exception as e_inner:
                 # Handle step 4/5 specific errors
                 end_time = time.time()
                 elapsed = end_time - start_time
                 note_time = f"Failed in {elapsed:.1f}s"
-                msg = str(e).replace("STOP_FLOW_", "")
+                msg = str(e_inner).replace("STOP_FLOW_", "")
                 # This is a step 4/5 error
                 self.msg_queue.put(("FAIL_2FA", (item_id, msg, note_time)))
                 return  # Exit the function after handling step 4 error
-        except Exception as e:
-            error_msg = str(e)
+        except Exception as e_outer:
+            error_msg = str(e_outer)
             end_time = time.time()
             elapsed = end_time - start_time
             note_time = f"Failed in {elapsed:.1f}s"
-            msg = str(e).replace("STOP_FLOW_", "")
+            msg = str(e_outer).replace("STOP_FLOW_", "")
             # This catches step 1-3 errors (step 4 errors are handled in inner try-except)
             self.msg_queue.put(("FAIL_CRITICAL", (item_id, msg, note_time)))
         finally:
@@ -525,13 +543,25 @@ class AutomationGUI:
 
         def worker():
             while not self.stop_event.is_set():
+                slot_id = None
                 try:
                     # 1. Lấy Account cần chạy
-                    item_id = task_queue.get(timeout=1)
+                    try:
+                        item_id = task_queue.get(timeout=1)
+                    except queue.Empty:
+                        break
                     
                     # 2. Lấy Slot hiển thị (để tính tọa độ cửa sổ)
                     # Nếu hết slot (đang full luồng), nó sẽ chờ ở đây
-                    slot_id = self.window_slots.get() 
+                    try:
+                        slot_id = self.window_slots.get(timeout=5)
+                    except queue.Empty:
+                        # Nếu đợi quá lâu mà không có slot, trả lại task và thử lại sau/bỏ qua?
+                        # Hoặc log warning. Ở đây ta coi như retry vòng sau.
+                        # Tuy nhiên item_id đã lấy rồi -> phải xử lý hoặc trả lại queue?
+                        # Đơn giản nhất: put lại vào queue
+                        task_queue.put(item_id)
+                        continue
                     
                     # 3. Tính toán Rect (x, y, w, h)
                     rect = self.calculate_window_rect(slot_id, n_threads)
@@ -540,25 +570,32 @@ class AutomationGUI:
                     self.process_single_account(item_id, window_rect=rect)
                     
                     # 5. Xong việc -> Trả lại Slot ID cho luồng khác dùng
-                    self.window_slots.put(slot_id)
+                    if slot_id is not None:
+                        self.window_slots.put(slot_id)
+                        slot_id = None # Reset to avoid double put in except
+                    
                     task_queue.task_done()
                     
-                except queue.Empty:
-                    break
-                except Exception as e:
-                    print(f"Worker Error: {e}")
-                    # Đảm bảo không bị mất slot nếu lỗi xảy ra ở bước lấy slot
-                    self.window_slots.put(slot_id)
+                    # Nghỉ 1 chút trước khi nhận task mới để tránh spam driver nếu chạy quá nhanh
+                    time.sleep(1.0)
+                
+                except Exception as e_worker:
+                    print(f"Worker Error: {e_worker}")
+                    # Đảm bảo không bị mất slot nếu lỗi xảy ra sau bước lấy slot
+                    if slot_id is not None:
+                        self.window_slots.put(slot_id)
                     pass
                 
                 if not self.is_running: break
         
         # Khởi tạo Threads
         threads = []
-        for _ in range(n_threads):
+        for i in range(n_threads):
             t = threading.Thread(target=worker, daemon=True)
             t.start()
             threads.append(t)
+            # [FIX] Stagger thread start to prevent CPU spike and Chrome crash
+            time.sleep(1.5)
 
         for t in threads: t.join()
         self.msg_queue.put(("ALL_DONE", None))

@@ -21,12 +21,14 @@ SENDER_FILTER = "Instagram"
 # Chuỗi subject bắt buộc (lowercase)
 TARGET_SUBJECTS = [
     "we've made it easy to get back on instagram",
-    "chúng tôi giúp bạn dễ dàng đăng nhập lại trên instagram"
+    "chúng tôi giúp bạn dễ dàng đăng nhập lại trên instagram",
+    "is your instagram recovery code"
 ]
 
 # --- REGEX & CONFIG ---
 RE_USER_HI = re.compile(r'Hi\s+([a-zA-Z0-9_.]+),', re.IGNORECASE)
 RE_UID_LINK = re.compile(r'uid=([0-9]{6,30})')
+RE_RECOVERY_CODE = re.compile(r'(\d{8})', re.IGNORECASE)
 
 RESET_LINK_HREF_HINTS = [
     "instagram.com/accounts/password/reset/confirm",
@@ -379,6 +381,18 @@ def verify_account_live(email_login, password):
                         # Tìm Link (Dùng hàm mạnh mẽ có sẵn của bạn)
                         link_extracted = _extract_reset_link_from_html(body_content)
                         
+                        # [NEW] Tìm Recovery Code 8 số nếu có
+                        recovery_code_match = RE_RECOVERY_CODE.search(body_content)
+                        if recovery_code_match:
+                            # Nếu tìm thấy code, có thể trả về luôn hoặc coi như success
+                            # Ở đây ta trả về dạng LINK=code:12345678 để bên kia xử lý nếu muốn
+                            # Hoặc chỉ cần return success để biết là có mail.
+                            # Tuy nhiên step0 đang mong chờ LINK=http...
+                            # Nếu là recovery code thì thường step0 không xử lý được trừ khi có logic nhập code.
+                            # Nhưng cứ extract đã.
+                            if not link_extracted: # Nếu không có link, thử lấy code làm giả link hoặc báo hiệu
+                                link_extracted = f"code:{recovery_code_match.group(1)}"
+
                         if user_extracted or uid_extracted or link_extracted:
                             # [CUSTOM LOGIC] Nếu tìm thấy, không đánh dấu đã đọc (đã dùng PEEK nên ok)
                             found_data = f"success|USER={user_extracted}|UID={uid_extracted}|LINK={link_extracted}"

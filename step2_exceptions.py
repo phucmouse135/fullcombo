@@ -510,10 +510,12 @@ class InstagramExceptionStep:
             print(f"   [Step 2] Error handling require password change: {e}")
             raise e
     def handle_status(self, status, ig_username, gmx_user, gmx_pass, linked_mail=None, ig_password=None, depth=0):
-        # Chống đệ quy vô tận (giới hạn 20 bước nhảy trạng thái)
-        if depth > 20:
+        # [USER REQUEST] Chống đệ quy vô tận và fail fast
+        if depth > 10:  # Giảm từ 20 xuống 10 để fail nhanh hơn
+             print(f"   [{ig_username}] [Step 2] Max depth reached ({depth}). Failing fast.")
              raise Exception("STOP_FLOW_LOOP: Max recursion depth reached")
-        print(f"   [{ig_username}] [Step 2] Processing status: {status}")
+        
+        print(f"   [{ig_username}] [Step 2] Processing status: {status} (Depth: {depth}/10)")
         if not self._is_driver_alive():
             raise Exception("STOP_FLOW_CRASH: Browser Closed")
 
@@ -531,6 +533,15 @@ class InstagramExceptionStep:
             print(f"   [{ig_username}] [Step 2] Success status reached: {status}")
             return status
         
+        # [NEW] Handle UNKNOWN_CHECK_PAGE (Skip Step 1 logic)
+        if status == "UNKNOWN_CHECK_PAGE":
+            print(f"   [{ig_username}] [Step 2] Initial check of page status (skipped login form)...")
+            new_status = self._check_verification_result()
+            # If still unknown or timeout, consider it failed login
+            if new_status == "TIMEOUT":
+                 # Maybe try to find login form to be sure?
+                 print(f"   [{ig_username}] [Step 2] Page check timeout. Assuming stuck or not loaded.")
+            return self.handle_status(new_status, ig_username, gmx_user, gmx_pass, linked_mail, ig_password, depth + 1)
         
         # DATA_PROCESSING_FOR_ADS
         if status == "DATA_PROCESSING_FOR_ADS":
@@ -1280,8 +1291,8 @@ class InstagramExceptionStep:
                 new_pass = ig_password + "@"
                 try:
                     self._handle_require_password_change(new_pass)
-                except Exception as e:
-                    error_msg = str(e)
+                except Exception as e_pass_change:
+                    error_msg = str(e_pass_change)
                     print(f"   [Step 2] Error in _handle_require_password_change: {error_msg}")
 
                     # Check if it's a stale element issue that might be recoverable
@@ -1303,10 +1314,10 @@ class InstagramExceptionStep:
                                 self._handle_require_password_change(new_pass)
                         except Exception as recovery_e:
                             print(f"   [Step 2] Recovery attempt failed: {recovery_e}")
-                            raise e  # Raise original error
+                            raise e_pass_change  # Raise original error
                     else:
                         # Non-stale error, raise immediately
-                        raise e
+                        raise e_pass_change
 
                 if time.time() - start_time > TIMEOUT:
                     raise Exception("TIMEOUT_REQUIRE_PASSWORD_CHANGE: End")
@@ -1938,10 +1949,40 @@ class InstagramExceptionStep:
                     # Send Enter
                     code_input.send_keys(Keys.ENTER)
                     time.sleep(1)
-                    if "security_code" in self.driver.current_url:
-                        wait_and_click(self.driver, By.XPATH, "//button[@type='submit'] | //button[contains(text(), 'Confirm')] | //button[contains(text(), 'Xác nhận')]",
-                        timeout=20)
-                    print("   [Step 2] Code input completed.")
+                    
+                    # [FIX] Click Confirm/Continue Button after input
+                    print(f"   [Step 2] Clicking Confirm/Continue button after code input...")
+                    self._robust_click_button([
+                        ("css", "div[role='button'][aria-label='Continue']"),
+                        ("css", "div[role='button'][aria-label='Next']"),
+                        ("css", "div[role='button'][aria-label='Confirm']"),
+                        ("xpath", "//div[@role='button' and (@aria-label='Continue' or @aria-label='Next')]"),
+                        ("css", "button[type='submit']"),
+                        ("xpath", "//button[contains(text(), 'Confirm') or contains(text(), 'Xác nhận') or contains(text(), 'Continue') or contains(text(), 'Tiếp tục') or contains(text(), 'Next')]"),
+                        ("js", """
+                            // 1. Prioritize aria-label on div[role=button] (Exact structure provided by user)
+                            var roleButtons = document.querySelectorAll('div[role="button"]');
+                            for (var i = 0; i < roleButtons.length; i++) {
+                                var label = (roleButtons[i].ariaLabel || '').trim().toLowerCase();
+                                var text = roleButtons[i].textContent.trim().toLowerCase();
+                                if (label === 'continue' || label === 'next' || label === 'confirm' || label === 'submit' ||
+                                    text === 'continue' || text === 'next' || text === 'confirm') {
+                                    return roleButtons[i];
+                                }
+                            }
+                            
+                            // 2. Fallback to button/div with text content
+                            var allButtons = document.querySelectorAll('button, div[role="button"]');
+                            for (var i = 0; i < allButtons.length; i++) {
+                                var text = allButtons[i].textContent.trim().toLowerCase();
+                                if (text.includes('confirm') || text.includes('continue') || text.includes('submit') || text.includes('next') || text.includes('xác nhận') || text.includes('tiếp tục')) {
+                                    return allButtons[i];
+                                }
+                            }
+                            return null;
+                        """)
+                    ])
+                    
                 except Exception as e:
                     print(f"   [Step 2] Error inputting code: {e}")
                     # Last resort: JS input
@@ -1959,16 +2000,15 @@ class InstagramExceptionStep:
     # ==========================================
     # 5. LOGIC CHECK MAIL (REUSE, ANTI-INFINITE LOOP)
     # ==========================================
-    def _check_mail_flow(self, get_code_func, input_code_func, max_retries=3, timeout=60):
+    def _check_mail_flow(self, get_code_func, input_code_func, max_retries=2, timeout=60):
         """
-        Chuẩn hóa logic check mail: lấy code, nhập code, kiểm tra kết quả, chống lặp vô hạn.
-        get_code_func: hàm lấy code (lambda)
-        input_code_func: hàm nhập code (lambda code)
+        [USER REQUEST] Fail fast: Giảm số lần retry lấy mã mail (max_retries=2)
         """
         start_time = time.time()
         for attempt in range(1, max_retries + 1):
+            # Check timeout
             if time.time() - start_time > timeout:
-                raise Exception("CHECK_MAIL: No code ")
+                raise Exception("CHECK_MAIL: Timeout")
             print(f"   [Step 2] >>> Code Attempt {attempt}/{max_retries} <<<")
             if attempt > 1:
                 # Có thể bổ sung logic gửi lại mã nếu cần
@@ -1993,7 +2033,59 @@ class InstagramExceptionStep:
                 if not self._is_driver_alive():
                     raise Exception("Browser closed during input")
                 print("   [Step 2] Waiting for UI to update after code input...")
-                wait_and_click(self.driver, By.CSS_SELECTOR, "button[type='submit']", timeout=20)
+                
+                # [FIX] Click Confirm/Continue Button after input
+                print(f"   [Step 2] Clicking Confirm/Continue button after code input (Attempt 1)...")
+                self._robust_click_button([
+                    ("css", "div[role='button'][aria-label='Continue']"),
+                    ("css", "div[role='button'][aria-label='Next']"),
+                    ("css", "div[role='button'][aria-label='Confirm']"),
+                    ("xpath", "//div[@role='button' and (@aria-label='Continue' or @aria-label='Next')]"),
+                    ("css", "button[type='submit']"),
+                    ("xpath", "//button[contains(text(), 'Confirm') or contains(text(), 'Xác nhận') or contains(text(), 'Continue') or contains(text(), 'Tiếp tục') or contains(text(), 'Next')]"),
+                    ("js", """
+                        var roleButtons = document.querySelectorAll('div[role="button"]');
+                        for (var i = 0; i < roleButtons.length; i++) {
+                            var label = (roleButtons[i].ariaLabel || '').trim().toLowerCase();
+                            var text = roleButtons[i].textContent.trim().toLowerCase();
+                            if (label === 'continue' || label === 'next' || label === 'confirm' || label === 'submit' ||
+                                text === 'continue' || text === 'next' || text === 'confirm') {
+                                return roleButtons[i];
+                            }
+                        }
+                        var allButtons = document.querySelectorAll('button, div[role="button"]');
+                        for (var i = 0; i < allButtons.length; i++) {
+                            var text = allButtons[i].textContent.trim().toLowerCase();
+                            if (text.includes('confirm') || text.includes('continue') || text.includes('submit') || text.includes('next') || text.includes('xác nhận') || text.includes('tiếp tục')) {
+                                return allButtons[i];
+                            }
+                        }
+                        return null;
+                    """)
+                ])
+
+                # [USER REQUEST] Click lần 2 sau khi load để xử lý popup "Something went wrong" click OK
+                print("   [Step 2] Waiting 3s then checking for OK/Dismiss popups...")
+                time.sleep(3)
+                
+                self._robust_click_button([
+                    ("xpath", "//button[contains(text(), 'OK') or contains(text(), 'Ok')]"),
+                    ("css", "div[role='button'][aria-label='OK']"), 
+                    ("css", "div[role='button'][aria-label='Ok']"),
+                    ("xpath", "//div[contains(text(), 'Something went wrong')]/..//button"), 
+                    ("js", """
+                        var buttons = document.querySelectorAll('button, div[role="button"]');
+                        for (var i = 0; i < buttons.length; i++) {
+                            var text = buttons[i].textContent.trim().toLowerCase();
+                            var label = (buttons[i].ariaLabel || '').trim().toLowerCase();
+                            if (text === 'ok' || label === 'ok' || text.includes('dismiss') || text.includes('đóng')) {
+                                return buttons[i];
+                            }
+                        }
+                        return null;
+                    """)
+                ])
+
                 # Tăng thời gian chờ sau khi nhấn submit để tránh check mail quá sớm khi UI còn đang xử lý
                 WebDriverWait(self.driver, 10).until(lambda d: d.execute_script("return document.readyState") == "complete")
                 time.sleep(1)  # Reduced sleep to 1s
@@ -2142,23 +2234,23 @@ class InstagramExceptionStep:
             if time.time() - start_time > TIMEOUT:
                 raise Exception("TIMEOUT_CHANGE_PASSWORD: Total time exceeded")
 
-        except Exception as e:
-            print(f"   [Step 2] Error in password change flow: {e}")
-            if "STOP_FLOW" in str(e):
-                raise e # Ném lỗi nghiêm trọng lên tầng trên xử lý
+        except Exception as e_step2:
+            print(f"   [Step 2] Error in password change flow: {e_step2}")
+            if "STOP_FLOW" in str(e_step2):
+                raise e_step2 # Ném lỗi nghiêm trọng lên tầng trên xử lý
 
         return True
     def _check_verification_result(self):
-        # Timeout protection for verification result (max 60s)
-        # Optimized with JS checks to avoid hangs and speed up detection
-        TIMEOUT = 20
+        # Timeout protection for verification result (max 30s) - FAIL FAST
+        TIMEOUT = 30
         end_time = time.time() + TIMEOUT
         consecutive_failures = 0
-        max_consecutive_failures = 20  # If JS fails 20 times in a row, consider timeout
+        max_consecutive_failures = 10  # Reduced
         try:
-            WebDriverWait(self.driver, 10).until(lambda d: self._safe_execute_script("return document.readyState") == "complete")
-        except Exception as e:
-            print(f"   [Step 2] Page not ready after 10s: {e}")
+             # Fast check for page load
+             self.driver.execute_script("return document.readyState")
+        except: pass
+        
         while time.time() < end_time:
             try:
                 # Get body text safely

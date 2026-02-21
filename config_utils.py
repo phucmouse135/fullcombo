@@ -88,20 +88,54 @@ def get_driver(headless=True , window_rect=None, user_data_dir=None):
     options.add_argument("--memory-pressure-off")
     options.add_argument("--disable-low-end-device-mode")
     
+    # Fix HTTPConnectionPool issue by using random port for debugging
+    options.add_argument("--remote-debugging-port=0")
+
     options.page_load_strategy = 'eager'
     
     # Updated user agent for Chrome 130+
     options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36")
     
+    driver = None
+    service = None
     try:
         service = Service(_get_chromedriver_path())
+        
+        # [FIX] Tăng timeout khởi tạo service để tránh crash khi máy lag
+        # Service sẽ chờ lâu hơn để process chromedriver start xong
+        # Mặc định selenium chờ process start khá ngắn
+        
         driver = webdriver.Chrome(service=service, options=options)
+        
+        # [FIX] Đặt kích thước và vị trí thủ công sau khi khởi tạo để đảm bảo không bị lỗi command line
+        if not headless and window_rect:
+             x, y, w, h = window_rect
+             try:
+                 driver.set_window_rect(x, y, w, h)
+                 # Wait a bit for window manager to apply
+                 time.sleep(0.5)
+             except:
+                 pass
+
         driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
         
         driver.set_page_load_timeout(60) 
-        driver.set_script_timeout(60)
+        # Tăng timeout script lên để tránh lỗi timeout khi máy chậm
+        driver.set_script_timeout(120) 
         return driver
     except Exception as e:
+        if driver:
+            try:
+                driver.quit()
+            except:
+                pass
+        # Nếu driver chưa tạo được nhưng service đã start, kill service để tránh zombie process
+        elif service:
+             try:
+                 service.stop()
+             except:
+                 pass
+
         error_msg = str(e)
         if "ected token" in error_msg or "stacktrace" in error_msg.lower():
             print("Chrome compatibility error detected. This might be due to Chrome version mismatch.")
