@@ -211,13 +211,35 @@ class AutomationGUI:
             os.makedirs(user_data_dir, exist_ok=True)
 
         # Single driver creation with retry on creation failure only
-        max_driver_retries = 3
+        # [USER REQUEST] FORCE STARTUP - Increase retries to essential infinite (50) and handle cleanup
+        max_driver_retries = 50 
         driver = None
         
         for driver_attempt in range(max_driver_retries):
             try:
                 print(f"   [Driver] Attempt {driver_attempt + 1}/{max_driver_retries} to create Chrome driver...")
+                
+                # If retries > 3, try killing lingering chrome processes to free resources
+                if driver_attempt > 2:
+                    print("   [Driver] Attempt > 2: Killing stale chrome processes...")
+                    try:
+                        os.system("taskkill /f /im chrome.exe")
+                        os.system("taskkill /f /im chromedriver.exe")
+                        time.sleep(2)
+                    except: pass
+                    
+                    # Also try clearing user data dir if it persists
+                    try:
+                        if os.path.exists(user_data_dir):
+                            print(f"   [Driver] Clearing user data dir: {user_data_dir}")
+                            shutil.rmtree(user_data_dir, ignore_errors=True)
+                            time.sleep(1)
+                    except: pass
+
                 driver = get_driver(headless=self.headless_var.get(), window_rect=window_rect, user_data_dir=user_data_dir)
+                if not driver:
+                     raise Exception("Driver returned None")
+
                 print("   [Driver] Chrome driver created successfully")
                 
                 # Check for data: URL error and redirect
