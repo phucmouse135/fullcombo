@@ -667,17 +667,7 @@ class InstagramResetPasswordStep:
             try:
                 self.driver.close() # Close mobile/reset tab
             except: pass
-
-            # truy cập instagram.com trên tab hiện tại (đã disable mobile emulation)
-            try:
-                self.driver.switch_to.window(current_window)
-                self.driver.get("https://www.instagram.com/")
-                time.sleep(5)
-            except Exception as e:
-                print(f"   [Step 0] Failed to switch back to main tab or load Instagram: {e}")
-                return "FAIL_SWITCH_TAB", None, None
-            
-
+        
             # Trả về cả link full
             return "SUCCESS", found_username, full_url # Báo hiệu đã xong Step 0 thành công -> Skip Step 1
 
