@@ -276,8 +276,6 @@ class AutomationGUI:
         
         # Main process - no retry loop for application errors
         try:
-
-
             # --- START STEP 0: RESET PASSWORD FIRST ---
             # Call Step 0 -> Get status & link
             step0 = InstagramResetPasswordStep(driver)
@@ -308,18 +306,16 @@ class AutomationGUI:
                  step0_status = "SKIP_STEP0"
 
             status = "FAIL_UNKNOWN" # Default status
-            
+            time.sleep(2) # Short wait before next step
             # [USER REQUEST] Always proceed to Step 2 regardless of Step 0 outcome
             if step0_status == "SUCCESS" or step0_status == "SUCCESS_WITH_ADJUSTED_PASS":
-                print(f"   [Step 0] SUCCESS. Proceeding to Step 1 status detection.")
+                print(f"   [Step 0] SUCCESS. Proceeding to Step 2 exception handling.")
                 if found_username and found_username != "unknown_user":
                     acc['username'] = found_username
                     self.update_tree_item(item_id, {0: found_username})
                 self._on_password_changed(acc['username'], final_reset_password)
                 acc['password'] = final_reset_password
-                # Step 1: Only detect status
-                step1 = InstagramLoginStep(driver)
-                status = step1._detect_initial_status(acc['username'])
+                status = "LOGGED_IN_SUCCESS"  # Skip step1, assume success for next step
             elif step0_status == "FAIL_FULL_URL_LOAD":
                 print(f"   [Step 0] Failed to load Full URL 3 times. Stopping flow.")
                 raise Exception("STOP_FLOW_FAIL_FULL_URL_LOAD")
@@ -327,11 +323,11 @@ class AutomationGUI:
                 print(f"   [Step 0] Failed or Skipped ({step0_status}). Calling STOP.")
                 raise Exception(f"STOP_FLOW_STEP0_FAILED_{step0_status}")
             else:
-                print(f"   [Step 0] Finished with unexpected status: {step0_status}. Proceeding to Step 1 status detection.")
+                print(f"   [Step 0] Finished with unexpected status: {step0_status}. Proceeding to Step 2 exception handling.")
                 driver.get("https://www.instagram.com/")
                 time.sleep(3)
-                step1 = InstagramLoginStep(driver)
-                status = step1._detect_initial_status(acc['username'])
+                status = "LOGGED_IN_SUCCESS"  # Skip step1, assume success for next step
+            print(f"   [Main] Step 2 initial status: {status}")
             
             # Step 2: Handle Exception (Common for both flows)
             step2 = InstagramExceptionStep(driver)

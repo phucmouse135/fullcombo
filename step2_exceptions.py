@@ -2270,6 +2270,135 @@ class InstagramExceptionStep:
                     return "RETRY_LOGIN"
                 
                 # We suspect automated behavior on your account
+                if 'we suspect automated behavior on your account' in body_text or 'prevent your account from being temporarily ' in body_text or 'verify you are a real person' in body_text or 'suspicious activity' in body_text:
+                    return "AUTOMATED_BEHAVIOR_DETECTED"
+                    
+                # We suspect automated behavior on your account
+                if 'we suspect automated behavior on your account' in body_text:
+                    return "AUTOMATED_BEHAVIOR_DETECTED"
+                        
+                if 'prevent your account from being temporarily ' in body_text or 'verify you are a real person' in body_text or 'suspicious activity' in body_text:
+                    return "AUTOMATED_BEHAVIOR_DETECTED"
+
+                # you need to request help logging in To secure your account, you need to request help logging in
+                if "you need to request help logging in" in body_text or "to secure your account, you need to request help logging in" in body_text:
+                    return "GET_HELP_LOG_IN"
+                    
+                # [NEW] Detect "Confirm your accounts" (Meta Accounts Center)
+                if "confirm your accounts" in body_text or "xác nhận tài khoản của bạn" in body_text:
+                    if "get started" in body_text or "bắt đầu" in body_text:
+                        return "CONFIRM_YOUR_ACCOUNTS"
+                        
+                # keep using your personal data across these accounts / use data across accounts / manage accounts
+                if "keep using your personal data across these accounts" in body_text or "use data across accounts" in body_text or "manage accounts" in body_text:
+                    return "ACCOUNTS_CENTER_DATA_SHARING"
+                        
+                if "the login information you entered is incorrect" in body_text or \
+                    "incorrect username or password" in body_text or \
+                    "thông tin đăng nhập bạn đã nhập không chính xác" in body_text:
+                    return "LOGIN_FAILED_INCORRECT"
+                    
+                # We Detected An Unusual Login Attempt 
+                if ("we detected an unusual login attempt" in body_text or "to secure your account, we'll send you a security code." in body_text) :
+                    if "email" in body_text or "mail" in body_text:            
+                        return "CONTINUE_UNUSUAL_LOGIN"
+                    if "this was me" in body_text or "let us know if it was you" in body_text:
+                        return "CONFIRM_TRUSTED_DEVICE"
+                    return "CONTINUE_UNUSUAL_LOGIN_PHONE"
+                    
+                # Check for no internet connection
+                if "we couldn't connect to instagram" in body_text and "make sure you're connected to the internet" in body_text:
+                    return "NOT_CONNECT_INSTAGRAM"
+                
+                if "choose a way to recover" in body_text:
+                    return "RECOVERY_CHALLENGE"
+                # 1. Các trường hợp Exception / Checkpoint
+                if "check your email" in body_text or " we sent to the email address" in body_text:
+                    return "CHECKPOINT_MAIL"
+
+                # Log in on another device to continue
+                if "log in on another device to continue" in body_text or "đăng nhập trên thiết bị khác để tiếp tục" in body_text:
+                    return "LOG_IN_ANOTHER_DEVICE"
+                    
+                # your account has been disabled
+                if "your account has been disabled" in body_text:
+                    return "ACCOUNT_DISABLED"
+
+                if "add phone number to get back into instagram" in body_text or "send confirmation" in body_text or "log into another account" in body_text or "we will send a confirmation code via sms to your phone." in body_text: 
+                    return "SUSPENDED_PHONE"
+
+                # yêu cầu đổi mật khẩu 
+                if "we noticed unusual activity" in body_text or "change your password" in body_text or "yêu cầu đổi mật khẩu" in body_text:
+                    return "REQUIRE_PASSWORD_CHANGE"
+                # this was me / let us know if it was you
+                if "this was me" in body_text or "let us know if it was you" in body_text or "to secure your account" in body_text:
+                    return "CONFIRM_TRUSTED_DEVICE"
+
+                # Try another device to continue
+                if "try another device" in body_text or "try another device to continue" in body_text or "can’t try another device?" in body_text:
+                    return "TRY_ANOTHER_DEVICE"
+
+                if "suspended" in body_text or "đình chỉ" in body_text:
+                    return "SUSPENDED"
+
+                # The login information you entered is incorrect
+                if "the login information you entered is incorrect" in body_text or \
+                    "incorrect username or password" in body_text or \
+                    "thông tin đăng nhập bạn đã nhập không chính xác" in body_text:
+                    return "LOGIN_FAILED_INCORRECT"
+                # Something went wrong
+                if "something went wrong" in body_text or "something went wrong" in body_text:
+                    return "LOGIN_FAILED_SOMETHING_WENT_WRONG"
+
+                # 2. Các trường hợp Thành công / Tiếp tục
+                if "select your birthday" in body_text or "add your birthday" in body_text:
+                    return "BIRTHDAY_SCREEN"
+
+                    # 
+                    # check your text messages
+                if "check your text messages" in body_text or "kiểm tra tin nhắn văn bản của bạn" in body_text:
+                    return "2FA_TEXT_MESSAGE"
+                    
+                    # if "allow the use of cookies" in body_text:
+                    #     return "COOKIE_CONSENT"
+                    
+                    
+                    
+                    # Help us confirm it's you
+                if "help us confirm it's you" in body_text or "xác nhận đó là bạn" in body_text:
+                    return "CONFIRM_YOUR_IDENTITY"
+
+                    
+
+                    # SMS 2FA screen "Enter a 6-digit login code generated by an authentication app." or vietnamese
+                if "mã đăng nhập 6 chữ số được tạo bởi ứng dụng xác thực" in body_text or "enter a 6-digit login code generated by an authentication app." in body_text:
+                    return "2FA_SMS"
+
+                    # Check your WhatsApp messages 
+                if "check your whatsapp messages" in body_text or "kiểm tra tin nhắn whatsapp của bạn" in body_text or "we sent via whatsapp to" in body_text:
+                    return "2FA_WHATSAPP"
+
+
+                    # Confirm your info on the app 
+                if "confirm your info on the app" in body_text:
+                    return "2FA_APP"
+                    
+                if "use another account" in body_text or "create new account" in body_text:
+                    if "continue" in body_text:
+                        return "RETRY_LOGIN"
+                    if "log into instagram" in body_text:
+                        return "FAIL_LOGIN_REDIRECTED_TO_PROFILE_SELECTION"
+
+                # your post goes against our community standards / How we make decisions
+                if "your post goes against our community standards" in body_text or "bài đăng của bạn vi phạm các tiêu chuẩn cộng đồng của chúng tôi" in body_text or "how we make decisions" in body_text:
+                    return "POST_VIOLATES_COMMUNITY_STANDARDS"
+                    
+
+                # Check your notifications  && Check your notifications there and approve the login to continue.
+                if "check your notifications" in body_text or "xem thông báo của bạn" in body_text or "check your notifications there and approve the login to continue." in body_text:
+                    return "2FA_NOTIFICATIONS"
+                
+                # We suspect automated behavior on your account
                 if 'we suspect automated behavior on your account' in body_text:
                     return "AUTOMATED_BEHAVIOR_DETECTED"
                 
