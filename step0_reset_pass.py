@@ -11,7 +11,7 @@ class InstagramResetPasswordStep:
     def __init__(self, driver):
         self.driver = driver
 
-    def process_reset_password(self, gmx_user, gmx_pass, new_password):
+    def process_reset_password(self, gmx_user, gmx_pass, new_password, window_rect=None):
         """
         Thực hiện quy trình lấy link reset -> đổi pass -> checkpoint mail (nếu có).
         Trả về tuple:
@@ -127,6 +127,21 @@ class InstagramResetPasswordStep:
         # Nếu muốn devtool mobile chuẩn, phải dùng Chrome DevTools Protocol (CDP).
         
         current_window = self.driver.current_window_handle
+
+        # Lưu lại kích thước PC gốc trước khi set mobile (ưu tiên window_rect từ slot, fallback get_window_size)
+        try:
+            pc_size = self.driver.get_window_size()  # {"width": W, "height": H}
+            pc_width  = pc_size.get("width", 1280)
+            pc_height = pc_size.get("height", 800)
+        except:
+            pc_width, pc_height = 1280, 800
+        # Nếu window_rect được truyền vào (từ slot layout), dùng nó để override cho chính xác
+        if window_rect and len(window_rect) == 4:
+            _, _, slot_w, slot_h = window_rect
+            if slot_w > 0 and slot_h > 0:
+                pc_width, pc_height = slot_w, slot_h
+        print(f"   [Step 0] PC window size for restore: {pc_width}x{pc_height}")
+
         self.driver.execute_script("window.open('');")
         self.driver.switch_to.window(self.driver.window_handles[-1])
         
@@ -464,12 +479,15 @@ class InstagramResetPasswordStep:
                         # User said "rồi mới trả lỗi" -> imply return error if not success.
                         return "FAIL_RETRY_TIMEOUT", None, None
 
-                    # Disable Mobile Emulation (Restore PC View)
+                    # Disable Mobile Emulation (Restore PC View via CDP, không đổi kích thước OS)
                     try:
-                        self.driver.execute_cdp_cmd("Emulation.clearDeviceMetricsOverride", {})
+                        self.driver.execute_cdp_cmd("Emulation.setDeviceMetricsOverride", {
+                            "width": pc_width, "height": pc_height,
+                            "deviceScaleFactor": 1, "mobile": False
+                        })
                         self.driver.execute_cdp_cmd("Emulation.setUserAgentOverride", {"userAgent": ""})
-                        try: self.driver.maximize_window()
-                        except: pass
+                        self.driver.execute_cdp_cmd("Emulation.clearDeviceMetricsOverride", {})
+                        print(f"   [Step 0] Restored PC Mode ({pc_width}x{pc_height}) via CDP.")
                     except: pass
                     
                     # Return tuple with FINAL_PASSWORD adjusted
@@ -482,19 +500,16 @@ class InstagramResetPasswordStep:
                     print("   [Step 0] Waiting 7s for full page load/UI rendering...")
                     time.sleep(7)
 
-                    # Disable Mobile Emulation (Restore PC View)
+                    # Disable Mobile Emulation (Restore PC View via CDP, không đổi kích thước OS)
                     try:
-                        print("   [Step 0] Disabling Mobile Emulation (Switching to PC Mode)...")
-                        self.driver.execute_cdp_cmd("Emulation.clearDeviceMetricsOverride", {})
-                        # Clear user agent override (reset to default browser UA)
+                        print("   [Step 0] Disabling Mobile Emulation (Switching to PC Mode via CDP)...")
+                        self.driver.execute_cdp_cmd("Emulation.setDeviceMetricsOverride", {
+                            "width": pc_width, "height": pc_height,
+                            "deviceScaleFactor": 1, "mobile": False
+                        })
                         self.driver.execute_cdp_cmd("Emulation.setUserAgentOverride", {"userAgent": ""})
-                        
-                        # Optionally maximize or set window size for PC
-                        try:
-                            self.driver.maximize_window()
-                        except: pass
-                        
-                        print("   [Step 0] Switched to PC Mode in current tab.")
+                        self.driver.execute_cdp_cmd("Emulation.clearDeviceMetricsOverride", {})
+                        print(f"   [Step 0] Switched to PC Mode ({pc_width}x{pc_height}) via CDP.")
                     except Exception as e:
                         print(f"   [Step 0] Warning disabling mobile emulation: {e}")
 

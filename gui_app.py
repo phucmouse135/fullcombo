@@ -290,7 +290,7 @@ class AutomationGUI:
             final_reset_password = new_pass_for_reset # Default is gmx_pass
             
             try:
-                 result_tuple = step0.process_reset_password(acc['gmx_user'], acc['gmx_pass'], new_pass_for_reset)
+                 result_tuple = step0.process_reset_password(acc['gmx_user'], acc['gmx_pass'], new_pass_for_reset, window_rect=window_rect)
                  
                  if isinstance(result_tuple, tuple):
                      if len(result_tuple) >= 4:
