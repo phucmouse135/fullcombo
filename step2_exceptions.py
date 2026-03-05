@@ -15,8 +15,6 @@ from step3_post_login import InstagramPostLoginStep as step3_post_login
 # Import các hàm utils
 from config_utils import wait_element, wait_and_send_keys, wait_dom_ready, wait_and_click
 from mail_handler_v2 import get_verify_code_v2
-from step1_login import InstagramLoginStep as step1_login
-
 class InstagramExceptionStep:
     def __init__(self, driver):
         self.driver = driver
@@ -27,8 +25,6 @@ class InstagramExceptionStep:
         else:
             # Fallback if method doesn't exist
             self.on_password_changed = lambda username, new_password: print(f"   [Step 2] Password changed for {username}: {new_password[:3]}***")
-        # Instance of step1 login
-        self.step1_login = step1_login(self.driver)
         # Instance of step3 post login
         self.step3_post_login = step3_post_login(self.driver)
         
@@ -1484,31 +1480,27 @@ class InstagramExceptionStep:
         
 
 
-        # Handle reload and login again if redirected to profile selection or use another profile
-        if status == "RETRY_UNUSUAL_LOGIN" or self._detect_stuck_on_profile_selection():
-            print("   [Step 2] Detected need to reload and login again (profile selection or use another profile, or stuck)...")
+        # Handle reload if detected stuck on profile selection screen
+        if self._detect_stuck_on_profile_selection():
+            print("   [Step 2] Detected stuck on profile selection. Reloading Instagram...")
             self.driver.get("https://www.instagram.com/")
             wait_dom_ready(self.driver, timeout=20)
             time.sleep(2)
-            if ig_username and ig_password:
-                print("   [Step 2] Calling step1 to login again with new password...")
-                isLogin = self.step1_login.perform_login(ig_username, ig_password)
-                wait_dom_ready(self.driver, timeout=20)
-                if isLogin == "LOGGED_IN_SUCCESS":
-                    return self.handle_status("LOGGED_IN_SUCCESS", ig_username, gmx_user, gmx_pass, linked_mail, ig_password, depth + 1)
-                else:
-                    return self.handle_status(isLogin, ig_username, gmx_user, gmx_pass, linked_mail, ig_password, depth + 1)
-            else:
-                raise Exception("STOP_FLOW_RETRY_UNUSUAL_LOGIN: Missing username or password")
+            new_status = self._check_verification_result()
+            if new_status == "FAIL_LOGIN_REDIRECTED_TO_PROFILE_SELECTION":
+                raise Exception("STOP_FLOW_EXCEPTION: FAIL_LOGIN_REDIRECTED_TO_PROFILE_SELECTION")
+            return self.handle_status(new_status, ig_username, gmx_user, gmx_pass, linked_mail, ig_password, depth + 1)
 
         fail_statuses = [
             "UNUSUAL_LOGIN", "TRY_ANOTHER_DEVICE", "2FA_REQUIRED", "SUSPENDED",
             "LOGIN_FAILED_INCORRECT", "2FA_SMS", "2FA_WHATSAPP", "GET_HELP_LOG_IN",
             "2FA_APP", "2FA_APP_CONFIRM", "FAIL_LOGIN_REDIRECTED_TO_PROFILE_SELECTION",
             "LOGIN_FAILED_RETRY", "2FA_NOTIFICATIONS", "LOGGED_IN_UNKNOWN_STATE",
-            "TIMEOUT_LOGIN_CHECK", "PAGE_BROKEN", "SUSPENDED_PHONE","LOG_IN_ANOTHER_DEVICE", 
-            "CONFIRM_YOUR_IDENTITY", "2FA_TEXT_MESSAGE", 
-            "ACCOUNT_DISABLED", "CONTINUE_UNUSUAL_LOGIN_PHONE", "DISABLE_ACCOUNT", "LOGIN_FAILED", "NOT_CONNECT_INSTAGRAM"
+            "TIMEOUT_LOGIN_CHECK", "PAGE_BROKEN", "SUSPENDED_PHONE", "LOG_IN_ANOTHER_DEVICE",
+            "CONFIRM_YOUR_IDENTITY", "2FA_TEXT_MESSAGE",
+            "ACCOUNT_DISABLED", "CONTINUE_UNUSUAL_LOGIN_PHONE", "DISABLE_ACCOUNT", "LOGIN_FAILED", "NOT_CONNECT_INSTAGRAM",
+            # Statuses từ step1_login (input/button timeout)
+            "FAIL_FIND_INPUT_USER_TIMEOUT", "FAIL_FIND_INPUT_PASS_TIMEOUT", "FAIL_LOGIN_BUTTON_TIMEOUT"
         ]
 
         if status in fail_statuses:
@@ -2035,46 +2027,63 @@ class InstagramExceptionStep:
                 print("   [Step 2] Waiting for UI to update after code input...")
                 
                 # [FIX] Click Confirm/Continue Button after input
-                print(f"   [Step 2] Clicking Confirm/Continue button after code input (Attempt 1)...")
-                self._robust_click_button([
-                    ("css", "div[role='button'][aria-label='Continue']"),
-                    ("css", "div[role='button'][aria-label='Next']"),
-                    ("css", "div[role='button'][aria-label='Confirm']"),
-                    ("xpath", "//div[@role='button' and (@aria-label='Continue' or @aria-label='Next')]"),
-                    ("css", "button[type='submit']"),
-                    ("xpath", "//button[contains(text(), 'Confirm') or contains(text(), 'Xác nhận') or contains(text(), 'Continue') or contains(text(), 'Tiếp tục') or contains(text(), 'Next')]"),
-                    ("js", """
-                        var roleButtons = document.querySelectorAll('div[role="button"]');
-                        for (var i = 0; i < roleButtons.length; i++) {
-                            var label = (roleButtons[i].ariaLabel || '').trim().toLowerCase();
-                            var text = roleButtons[i].textContent.trim().toLowerCase();
-                            if (label === 'continue' || label === 'next' || label === 'confirm' || label === 'submit' ||
-                                text === 'continue' || text === 'next' || text === 'confirm') {
-                                return roleButtons[i];
-                            }
-                        }
-                        var allButtons = document.querySelectorAll('button, div[role="button"]');
-                        for (var i = 0; i < allButtons.length; i++) {
-                            var text = allButtons[i].textContent.trim().toLowerCase();
-                            if (text.includes('confirm') || text.includes('continue') || text.includes('submit') || text.includes('next') || text.includes('xác nhận') || text.includes('tiếp tục')) {
-                                return allButtons[i];
-                            }
-                        }
-                        return null;
-                    """)
-                ])
 
+                print("   [Step 2] Clicking Confirm/Continue button after code input (Attempt 1)...")
+                click_attempts = 0
+                max_click_attempts = 3
+                click_success = False
+                while click_attempts < max_click_attempts:
+                    result = self._robust_click_button([
+                        ("css", "div[role='button'][aria-label='Continue']"),
+                        ("css", "div[role='button'][aria-label='Next']"),
+                        ("css", "div[role='button'][aria-label='Confirm']"),
+                        ("xpath", "//div[@role='button' and (@aria-label='Continue' or @aria-label='Next')]"),
+                        ("css", "button[type='submit']"),
+                        ("xpath", "//button[contains(text(), 'Confirm') or contains(text(), 'Xác nhận') or contains(text(), 'Continue') or contains(text(), 'Tiếp tục') or contains(text(), 'Next')]"),
+                        ("js", """
+                            var roleButtons = document.querySelectorAll('div[role="button"]');
+                            for (var i = 0; i < roleButtons.length; i++) {
+                                var label = (roleButtons[i].ariaLabel || '').trim().toLowerCase();
+                                var text = roleButtons[i].textContent.trim().toLowerCase();
+                                if (label === 'continue' || label === 'next' || label === 'confirm' || label === 'submit' ||
+                                    text === 'continue' || text === 'next' || text === 'confirm') {
+                                    return roleButtons[i];
+                                }
+                            }
+                            var allButtons = document.querySelectorAll('button, div[role="button"]');
+                            for (var i = 0; i < allButtons.length; i++) {
+                                var text = allButtons[i].textContent.trim().toLowerCase();
+                                if (text.includes('confirm') || text.includes('continue') || text.includes('submit') || text.includes('next') || text.includes('xác nhận') || text.includes('tiếp tục')) {
+                                    return allButtons[i];
+                                }
+                            }
+                            return null;
+                        """)
+                    ]);
+                    click_attempts += 1
+                    if result:
+                        click_success = True
+                        break
+                    else:
+                        print(f"   [Step 2] Failed to click button (Attempt {click_attempts}/{max_click_attempts})")
+                        time.sleep(1)
 
-                # [USER REQUEST] Click lần 2 sau khi load để xử lý popup "Something went wrong" -> REFRESH 
+                if not click_success:
+                    print("   [Step 2] Failed to click button after 3 attempts. Proceeding to status check.")
+                    check_result = self._check_verification_result()
+                    print(f"   [Step 2] Result after failed clicks: {check_result}")
+                    return check_result
+
+                # [USER REQUEST] Click lần 2 sau khi load để xử lý popup 'Something went wrong' -> REFRESH 
                 print("   [Step 2] Waiting 3s then Refreshing page (instead of clicking OK)...")
                 time.sleep(3)
-                
+
                 # REFRESH PAGE
                 self.driver.refresh()
                 try:
                     WebDriverWait(self.driver, 30).until(lambda d: d.execute_script("return document.readyState") == "complete")
                 except: pass
-                
+
                 # Tăng thời gian chờ sau khi load lại
                 time.sleep(5)
                 

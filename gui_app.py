@@ -307,7 +307,7 @@ class AutomationGUI:
 
             status = "FAIL_UNKNOWN" # Default status
             time.sleep(2) # Short wait before next step
-            # [USER REQUEST] Always proceed to Step 2 regardless of Step 0 outcome
+            # Chỉ chạy Step 2 khi Step 0 SUCCESS, mọi lỗi/status khác đều raise exception luôn
             if step0_status == "SUCCESS" or step0_status == "SUCCESS_WITH_ADJUSTED_PASS":
                 print(f"   [Step 0] SUCCESS. Proceeding to Step 2 exception handling.")
                 if found_username and found_username != "unknown_user":
@@ -316,17 +316,13 @@ class AutomationGUI:
                 self._on_password_changed(acc['username'], final_reset_password)
                 acc['password'] = final_reset_password
                 status = "LOGGED_IN_SUCCESS"  # Skip step1, assume success for next step
-            elif step0_status == "FAIL_FULL_URL_LOAD":
-                print(f"   [Step 0] Failed to load Full URL 3 times. Stopping flow.")
-                raise Exception("STOP_FLOW_FAIL_FULL_URL_LOAD")
             elif "FAIL" in step0_status or "SKIP" in step0_status:
-                print(f"   [Step 0] Failed or Skipped ({step0_status}). Calling STOP.")
-                raise Exception(f"STOP_FLOW_STEP0_FAILED_{step0_status}")
+                print(f"   [Step 0] Failed or Skipped ({step0_status}). Stopping flow.")
+                raise Exception(f"STOP_FLOW_STEP0: {step0_status}")
             else:
-                print(f"   [Step 0] Finished with unexpected status: {step0_status}. Proceeding to Step 2 exception handling.")
-                driver.get("https://www.instagram.com/")
-                time.sleep(3)
-                status = "LOGGED_IN_SUCCESS"  # Skip step1, assume success for next step
+                # Bất kỳ status nào không rõ (VD: LINK_RESET_PASS_DIE) đều raise exception, không chạy Step 2
+                print(f"   [Step 0] Unexpected/unhandled status: {step0_status}. Stopping flow.")
+                raise Exception(f"STOP_FLOW_STEP0: {step0_status}")
             print(f"   [Main] Step 2 initial status: {status}")
             
             # Step 2: Handle Exception (Common for both flows)
